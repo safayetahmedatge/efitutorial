@@ -1,6 +1,14 @@
 # UEFI Tutorial
 
-This is a tutorial to help developers ramp up on UEFI environment and programming. The intended audience is a C programmer with basic knowledge of computer architecture and system programming (paging, adressing modes ... etc).
+This is a tutorial to help developers ramp up on UEFI environment and programming. (The acronyms UEFI and EFI are used interchangeably) The intended audience is a C programmer with basic knowledge of computer architecture and system programming (paging, adressing modes ... etc).
+
+1. In the remainder of this page, an overview of UEFI is presented with notes on setting up Ubuntu on an EFI platform.
+
+2. In [Section 2](pages/section2/section2.md), two UEFI development environments are described with notes on how to set up the two environments and use them.
+
+3. In [Section 3](pages/section3/section3.md), the UEFI execution environment is described in more detail along with notes on accessing UEFI services. Example code is presented.
+
+4. In [Section 4](pages/section4/section4.md), UEFI Secure Boot is described in detail along with key databases, code signing, and related utilities.
 
 ## Useful Resources
 
@@ -28,19 +36,147 @@ Services provided by UEFI may be as simple as memory allocation and management o
 
 UEFI executable images are packed as PE/COFF images (Windows binary format). Images may be loaded from a file system or over the network. Images may be executed directly by the firmware or by other UEFI executables through the firmware.
 
-UEFI Images may be boot-service drivers or run-time-service drivers that implement boot-time or run-time services. However, the scope of this tutorial is limited to UEFI applications.
+UEFI images may be boot-service drivers or run-time-service drivers that implement boot-time or run-time services. However, the scope of this tutorial is limited to UEFI applications.
 
-UEFI applications may be like utilities that perform a specific task and return control to the caller or launch another UEFI application (just like command-line utilities in Linux). However, unlike such applications, OS-loaders are a special type of application that take control of the system (away from UEFI boot-time services) and pass control to an operating system.
+UEFI applications may be like utilities that perform a specific task and return control to the caller or launch another UEFI application (just like command-line utilities in Linux). OS-loaders are a special type of application that take control of the system (away from UEFI boot-time services) and pass control to an operating system.
 
 The concept of run-time services, boot-time services, and exit-boot-services are described in greater detail later in this tutorial. The following figure provides a summary of the different types of images.
 
-![UEFI image types](pages/page0/uefi-image-types.jpg)
+![UEFI image types](pages/section1/uefi-image-types.jpg)
 
 ## Booting a UEFI Platform
 
-UEFI platforms are expected to have a single EFI System Partition (ESP). The ESP is a specially marked FAT-formatted partition in a storage device (disk, USB flash drive, etc ...). The device may be partitioned using MBR or GPT. The firmware loads UEFI images from the EFI system partition.
+UEFI platforms are expected to have a single EFI System Partition (ESP). The ESP is a specially marked FAT-formatted partition in a storage device (disk, USB flash drive, etc ...). The device may be partitioned using MBR format or GPT format. The firmware loads UEFI images from this partition.
 
 UEFI platforms boot under the control of the UEFI Boot Manager in the firmware. The UEFI Boot Manager loads or attempts to load a sequence of drivers and applications based on some policy specified through UEFI variables. UEFI variables and boot policy are described in greater detail later in this tutorial.
 
 If a valid image is not found through the boot policy, or in case of booting from removable media, the boot manager will attempt to load an image from a default path. The default path is architecture specific (x86, x86-64, Itanium, ARM). For x86-64 platforms, the default path is `\EFI\BOOT\BOOTx64.efi`. Since the ESP is FAT-formatted, file paths are not case sensitive.
 
+## Ubuntu on EFI Platforms
+
+UEFI can be configured to emulate the legacy BIOS interface through a component called Compatibility Support Module (CSM). However, CSM must be disabled to enable UEFI Secure Boot.
+
+Vanilla Ubuntu images will work on both UEFI and legacy BIOS platforms. To ensure Ubuntu installs with UEFI support, the firmware should be configured (through startup menu) as listed below:
+
+* CSM should be disabled
+* UEFI Secure Boot should be enabled
+* UEFI Secure Boot should be in "User Mode" with default keys installed.
+
+Note: The system must be reset for these changes to take effect.
+
+Once the firmware is configured as described above, Ubuntu can be installed as usual. Ubuntu uses an EFI image called the shim on platforms that use Microsoft certificates for secure boot. The shim is signed with a Microsoft key. The shim is responsible for launching the GRUB EFI image.
+
+Some relevant parts of the firmware menu from an Intel platform are shown in the images below:
+
+![UEFI image types](pages/section1/firmwaremenu-Boot.jpg)
+
+![UEFI image types](pages/section1/firmwaremenu-CSM.jpg)
+
+![UEFI image types](pages/section1/firmwaremenu-Security.jpg)
+
+![UEFI image types](pages/section1/firmwaremenu-SecureBoot.jpg)
+
+### EFI System Partition
+
+On Ubuntu, the EFI system partition (ESP) is mounted at `/boot/efi`. The partition is mounted with read, write, and execute access restricted to root.
+
+        $ sudo ls -R /boot/efi
+        /boot/efi:
+        EFI
+
+        /boot/efi/EFI:
+        ubuntu
+
+        /boot/efi/EFI/ubuntu:
+        fw  fwupx64.efi  grub.cfg  grubx64.efi	mmx64.efi  shimx64.efi
+
+        /boot/efi/EFI/ubuntu/fw:
+
+As seen above, Ubuntu uses a non-default locations for the shim and GRUB images:
+
+* `/boot/efi/EFI/ubuntu/shimx64.efi`
+* `/boot/efi/EFI/ubuntu/grubx64.efi`
+
+As a result, Ubuntu requires boot variables to be configured to point the firmware to the correct EFI image at startup. Boot variables are described in greater detail below.
+
+### `sysfs`
+
+UEFI services can be divided into run-time services and boot-time services. Boot-time services are only available at boot time. Run-time services are always available.
+
+UEFI variables are accessed through run-time services. This includes the boot variables mentioned earlier as well as the key variables used by secure boot. Linux provides access to these variables to user space through `sysfs`. Specifically, the `efivars` kernel module provides virtual files at the following path to access the UEFI variables:
+
+        $ ls /sys/firmware/efi/efivars/
+        AcpiGlobalVariable-af9ffd67-ec10-488a-9dfc-6cbf5ee22c2e     NotFirstBoot-70040abc-6387-4588-87b1-ddcd6c7d7af5
+        AMITCGPPIVAR-a8a2093b-fefa-43c1-8e62-ce526847265e           ONBOARD_DEVS_PRESENT-d98397ee-7a9d-457a-a9df-e568ae87cc18
+        AMITSESetup-c811fa38-42c8-4579-a9bb-60e94eddfb34            OsIndications-8be4df61-93ca-11d2-aa0d-00e098032b8c
+        ...
+
+Note: Security-sensitive variables (the UEFI key variables, for example) are authenticated. Write operations (replace or append) of those variables must be signed. Signature validation (even at run-time) is performed by the firmware itself.
+
+UEFI variables are described in greater detail in a later section.
+
+### `efibootmgr` 
+
+Boot variables are used to conifgure the firmware regarding where to find EFI images (paths in the system partition) and the sequence in which to boot them. While `efivars` exposes the raw boot variables, the `efibootmgr` utility provides a more user-friendly way to access the variables using the same virtual files in `sysfs`. 
+
+`efibootmgr` should be installed by default in Ubuntu on UEFI platforms. Otherwise, it can be installed with `apt`.
+
+        $ sudo apt install efibootmgr
+
+Without any additional options, `efibootmgr` prints a list of the boot-related variables:
+
+        $ sudo efibootmgr -v
+        BootCurrent: 0000
+        Timeout: 0 seconds
+        BootOrder: 0000,0001,0002,0008,0006,0007
+        Boot0000* ubuntu	HD(4,GPT,0882ec5f-da2e-48ef-8ba3-d1a11cdadfa2,0x800,0x1eb800)/File(\EFI\ubuntu\shimx64.efi)
+        Boot0001* DTO UEFI USB Floppy/CD	VenMedia(b6fef66f-1495-4584-a836-3492d1984a8d,0500000001)AMBO
+        Boot0002* DTO UEFI USB Hard Drive	VenMedia(b6fef66f-1495-4584-a836-3492d1984a8d,0200000001)AMBO
+        Boot0006* DTO Legacy USB Floppy/CD	VenMedia(b6fef66f-1495-4584-a836-3492d1984a8d,0500000000)AMBO
+        Boot0007* Hard Drive	VenMedia(b6fef66f-1495-4584-a836-3492d1984a8d,0200000000)AMBO
+        Boot0008* KingstonDataTraveler 3.0PMAP	PciRoot(0x0)/Pci(0x1a,0x0)/USB(1,0)/USB(3,0)/HD(1,MBR,0x4294967194,0x3f,0x39d2bc1)AMBO
+
+The file paths are specified as "device paths", a special format used by UEFI to specify paths (since there is no concept of mount point or root file system from the firmware perspective).
+
+If the boot variable labeled `ubuntu` (`Boot0000`) was absent, it could be created with the command:
+
+        efibootmgr -b 0000 -w -c -d /dev/sda -p 4 -l "\EFI\ubuntu\shimx64.efi" -L "ubuntu".
+
+Refer to the man page for `efibootmgr` for more details. Also, the EFI boot process is described in greater detail on [this page](pages/bootmgr/bootmgr.md).
+
+### `efi-tools` and `sbsigntool`
+
+If secure boot is enabled, the UEFI firmware will only launch EFI images that are authorized. An image is authorized if
+
+* the image is signed with a key whose certificate is present in the key database
+* or a hash of the image is present in the key database
+
+The key databases are UEFI variables. When secure boot is enabled, these variables are authenticated: write-operations to these variables must be signed.
+
+The `sbsigntool` package provides utilities to sign EFI images, attach signatures to images, and verify images against certificates. The `efi-tools` package provides utilities to hash EFI images, and utilities to created signed updates to authenticated EFI variables. Details of how to use these utilities are presented in Section 4. The steps to build and install these packages are presented on these pages.
+
+Ubuntu provides `sbsigntool` and `efi-tools` packages through `apt`. However, the versions of these packages that come with Ubuntu are older broken versions. Working versions of these packages can be installed from source. Following is a list of commands to install these packages from source.
+
+        $ mkdir efi-secureboot-tools
+        $ cd efi-secureboot-tools/
+
+        $ sudo apt install git gnu-efi libssl-dev libssl-doc zlib1g-dev libfile-slurp-perl help2man
+        $ git clone http://github.com/mjg59/efitools
+        $ cd efitools/
+        $ make
+        $ sudo make install
+        $ cd ../
+
+        $ sudo apt install autoconf automake autotools-dev m4 libltdl-dev libtool binutils-dev uuid-dev
+        $ git clone https://git.kernel.org/pub/scm/linux/kernel/git/jejb/sbsigntools.git
+        $ cd sbsigntools
+
+Modify the URL inside "`.gitmodules`" file from "`git://git.ozlabs.org/~ccan/ccan`" to "`https://github.com/rustyrussell/ccan.git`".
+
+        $ ./autogen.sh
+        $ ./configure
+        $ make
+        $ sudo make install
+        $ cd ../
+
+##[Next: UEFI Development on Ubuntu](pages/section2/section2.md)
