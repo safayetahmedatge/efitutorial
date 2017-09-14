@@ -10,6 +10,8 @@ This is a tutorial to help developers ramp up on UEFI environment and programmin
 
 4. In [Section 4](pages/section4/section4.md), UEFI Secure Boot is described in detail along with key databases, code signing, and related utilities.
 
+----------------------------------------------
+
 ## Useful Resources
 
 Some useful resources are listed below. This tutorial copies a lot of material from the UEFI specification.
@@ -58,23 +60,23 @@ UEFI can be configured to emulate the legacy BIOS interface through a component 
 
 Vanilla Ubuntu images will work on both UEFI and legacy BIOS platforms. To ensure Ubuntu installs with UEFI support, the firmware should be configured (through startup menu) as listed below:
 
-* CSM should be disabled
+* CSM (also called legacy boot mode) should be disabled
 * UEFI Secure Boot should be enabled
-* UEFI Secure Boot should be in "User Mode" with default keys installed.
+* UEFI Secure Boot should be in "User Mode" with factory/default keys installed.
 
 Note: The system must be reset for these changes to take effect.
 
 Once the firmware is configured as described above, Ubuntu can be installed as usual. Ubuntu uses an EFI image called the shim on platforms that use Microsoft certificates for secure boot. The shim is signed with a Microsoft key. The shim is responsible for launching the GRUB EFI image.
 
-Some relevant parts of the firmware menu from an Intel platform are shown in the images below:
+Some relevant parts of the firmware menu from an AMD laptop are shown in the images below:
 
-![UEFI image types](pages/section1/firmwaremenu-Boot.jpg)
+![](pages/section1/firmwaremenu-nolegacymode.jpg)
 
-![UEFI image types](pages/section1/firmwaremenu-CSM.jpg)
+**Figure: Setting the frimware to strict UEFI mode (no legacy support)**
 
-![UEFI image types](pages/section1/firmwaremenu-Security.jpg)
+![](pages/section1/firmwaremenu-securebootfactorykeys.jpg)
 
-![UEFI image types](pages/section1/firmwaremenu-SecureBoot.jpg)
+**Figure: Setting factory-default UEFI keys**
 
 ### EFI System Partition
 
@@ -115,9 +117,9 @@ Note: Security-sensitive variables (the UEFI key variables, for example) are aut
 
 UEFI variables are described in greater detail in a later section.
 
-### `efibootmgr` 
+### `efibootmgr`
 
-Boot variables are used to conifgure the firmware regarding where to find EFI images (paths in the system partition) and the sequence in which to boot them. While `efivars` exposes the raw boot variables, the `efibootmgr` utility provides a more user-friendly way to access the variables using the same virtual files in `sysfs`. 
+Boot variables are used to conifgure the firmware regarding where to find EFI images (paths in the system partition) and the sequence in which to boot them. While `efivars` exposes the raw boot variables, the `efibootmgr` utility provides a more user-friendly way to access the variables using the same virtual files in `sysfs`.
 
 `efibootmgr` should be installed by default in Ubuntu on UEFI platforms. Otherwise, it can be installed with `apt`.
 
@@ -179,4 +181,55 @@ Modify the URL inside "`.gitmodules`" file from "`git://git.ozlabs.org/~ccan/cca
         $ sudo make install
         $ cd ../
 
-##[Next: UEFI Development on Ubuntu](pages/section2/section2.md)
+In addition to signing EFI images and producing key updates, `efi-tools` contains utilities to access the UEFI key variables through the virtual files in `sysfs`. Note: When Secure Boot is enabled and the platform is in _User_ mode, any write operations to the key variables must be appropriately signed.
+
+The following example shows the key variables printed using the `efi-readvar` utility on an AMD laptop. As seen below, the platform key, `PK`, is a Lenovo key, and the key-exchange keys, `KEK`, are Microsoft keys. These keys are explained in greater detail in Section 4.
+
+        $sudo efi-readvar
+        Variable PK, length 852
+        PK: List 0, type X509
+            Signature 0, size 824, owner e04fd794-033e-46a0-81d2-048e8da1432e
+                Subject:
+                    CN=Ideapad Products
+                Issuer:
+                    CN=Trust - Lenovo Certificate
+        Variable KEK, length 1560
+        KEK: List 0, type X509
+            Signature 0, size 1532, owner 77fa9abd-0359-4d32-bd60-28f4e78f784b
+                Subject:
+                    C=US, ST=Washington, L=Redmond, O=Microsoft Corporation, CN=Microsoft Corporation KEK CA 2011
+                Issuer:
+                    C=US, ST=Washington, L=Redmond, O=Microsoft Corporation, CN=Microsoft Corporation Third Party Marketplace Root
+        Variable db, length 4068
+        db: List 0, type SHA256
+            Signature 0, size 48, owner e04fd794-033e-46a0-81d2-048e8da1432e
+                Hash:14e62a4905e19189e70828983165939afc0a331d0b415f3332b0e818a827f436
+        db: List 1, type X509
+            Signature 0, size 821, owner e04fd794-033e-46a0-81d2-048e8da1432e
+                Subject:
+                    CN=1L510-1415ABR
+                Issuer:
+                    CN=Trust - Lenovo Certificate
+        db: List 2, type X509
+            Signature 0, size 1572, owner 77fa9abd-0359-4d32-bd60-28f4e78f784b
+                Subject:
+                    C=US, ST=Washington, L=Redmond, O=Microsoft Corporation, CN=Microsoft Corporation UEFI CA 2011
+                Issuer:
+                    C=US, ST=Washington, L=Redmond, O=Microsoft Corporation, CN=Microsoft Corporation Third Party Marketplace Root
+        db: List 3, type X509
+            Signature 0, size 1515, owner 77fa9abd-0359-4d32-bd60-28f4e78f784b
+                Subject:
+                    C=US, ST=Washington, L=Redmond, O=Microsoft Corporation, CN=Microsoft Windows Production PCA 2011
+                Issuer:
+                    C=US, ST=Washington, L=Redmond, O=Microsoft Corporation, CN=Microsoft Root Certificate Authority 2010
+        Variable dbx, length 3752
+        dbx: List 0, type SHA256
+            Signature 0, size 48, owner 77fa9abd-0359-4d32-bd60-28f4e78f784b
+                Hash:80b4d96931bf0d02fd91a61e19d14f1da452e66db2408ca8604d411f92659f0a
+            Signature 1, size 48, owner 77fa9abd-0359-4d32-bd60-28f4e78f784b
+                Hash:f52f83a3fa9cfbd6920f722824dbe4034534d25b8507246b3b957dac6e1bce7a
+            Signature 2, size 48, owner 77fa9abd-0359-4d32-bd60-28f4e78f784b
+        ...
+
+----------------------------------------------
+__[Next: EFI Development](pages/section2/section2.md)__
