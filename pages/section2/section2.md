@@ -1,4 +1,4 @@
-#Section 2: EFI Development
+# Section 2: EFI Development
 
 [Previous: Introduction and Overview](../../README.md)
 
